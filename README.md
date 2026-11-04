@@ -112,7 +112,7 @@ role-based access control (`ROLE_USER`, `ROLE_ADMIN`).
 | Security | Spring Security 6 + JJWT **0.12.6** (`jjwt-api`, `jjwt-impl`, `jjwt-jackson`) |
 | API docs | Springdoc OpenAPI **2.8.6** (`springdoc-openapi-starter-webmvc-ui`) |
 | Boilerplate | Lombok |
-| Testing | JUnit 5, AssertJ, `spring-boot-starter-test`, `spring-security-test` |
+| Testing | JUnit 5, Mockito (`mockito-junit-jupiter`), AssertJ, `spring-boot-starter-test`, `spring-security-test` |
 
 ### Frontend
 
@@ -837,6 +837,30 @@ where a 1000.00 wallet ends at `799.80` after buying 1 AAPL at 200.00.
 
 ### Backend Tests
 
+The suite has two layers: fast, isolated **unit tests** (JUnit 5 + Mockito, no Spring
+context) and **integration tests** (`@SpringBootTest`) that wire the real beans
+against an in-memory H2 database.
+
+**Unit tests** — `backend/src/test/java/com/ftp/backend/**`, every collaborator is a
+Mockito mock, so each rule is verified in isolation:
+
+| Test class | Scope |
+|------------|-------|
+| `service/impl/TradingServiceImplTest` | Server-side pricing (client price ignored), symbol normalisation, fee maths, insufficient funds/holdings, position averaging & full liquidation, order ownership checks, admin force-cancel |
+| `service/impl/WalletServiceImplTest` | Balance reads, create-on-demand wallets, deposits, withdrawals and the insufficient-funds / non-positive-amount guards |
+| `service/impl/AuthServiceImplTest` | Registration (hashed password, `ROLE_USER` assignment, funded wallet, duplicate guards, missing default role) and login token issuance |
+| `service/impl/PortfolioServiceImplTest` | Holding mapping and summary aggregation (value, cost, P/L, P/L %) |
+| `service/impl/MarketDataServiceImplTest` | Read mapping, search delegation, create/update/delete and unknown-symbol handling |
+| `service/impl/UserServiceImplTest` | `UserDetails` resolution (username + email), profile reads/updates, email-conflict guard, cascade-aware delete |
+| `service/impl/WatchlistServiceImplTest` | Watchlist CRUD, duplicate-symbol conflict, ownership-scoped lookups |
+| `service/impl/TransactionServiceImplTest` | Ledger mapping and cross-user read protection |
+| `service/impl/DashboardStatsServiceImplTest` | Admin stats aggregation (counts, wallet balance, trading volume, null safety) |
+| `security/JwtTokenProviderTest` | Token round-trip, tamper/expiry rejection, misconfiguration guards |
+| `security/CurrentUserUtilsTest` | Caller resolution from the `SecurityContext`, admin check |
+| `exception/GlobalExceptionHandlerTest` | The JSON error contract for every mapped exception |
+
+**Integration tests** — real beans on H2:
+
 | Test class | Scope |
 |------------|-------|
 | `BackendApplicationTests` | `@SpringBootTest` smoke test — the application context loads |
@@ -848,6 +872,12 @@ Tests run against an in-memory H2 database (test scope) and do not need PostgreS
 ```bash
 cd backend
 JWT_SECRET="$(openssl rand -base64 48)" ./mvnw test
+```
+
+Run only the isolated unit tests:
+
+```bash
+./mvnw test -Dtest='*ServiceImplTest,JwtTokenProviderTest,CurrentUserUtilsTest,GlobalExceptionHandlerTest'
 ```
 
 ### Backend Build & Run
